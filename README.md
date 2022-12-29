@@ -69,6 +69,7 @@ Options:
   -Q, --quit            Quit immediately after activating session
   -N NETNS, --netns=NETNS
                         Name of network namespace for tun device
+  -Z, --gtp-kernel      Use GTP Kernel. Needs libgtpnl.                        
 root@ubuntu:/home/fabricio/Documents# 
 ```
 
@@ -154,3 +155,7 @@ Press q to quit
 - if you are running the application in a VM, the -s option (the GTP address present at GTP level) must match the output IP address that will reach the SGW/PGW/GGSN.
 - Use option -S to choose which IP source address to use when there are multiple interfaces in the OS.
 - Use option -g to set the gateway statically when there are multiple interfaces, and the SGW/PGW/GGSN is not reachable via the current default route, but through a different interface. This IP address will be used as the gateway for GTP-c and GTP-u traffic.
+
+# Updated version (2022/12/28):
+- Support of gtp kernel (libgtpnl and modprobe gtp) for default namespace. New option -Z
+- Still trying to see if I can do it also in namespace :)

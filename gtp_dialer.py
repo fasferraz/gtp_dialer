@@ -830,7 +830,7 @@ def add_apn_restriction_v2():
     return b'\x7f\x00\x01\x00\x00'
 
 def add_ambr_v2():
-    return b'\x48\x00\x08\x00\x00\x04\x93\xe0\x00\x04\x93\xe0'    
+    return b'\x48\x00\x08\x00\x00\x0f\x42\x40\x00\x0f\x42\x40'    
 
 def add_ebi_v2(instance,ebi):
     return b'\x49\x00\x01' + struct.pack("!B",instance) + bytes([ebi])
@@ -842,7 +842,7 @@ def add_bearer_context_v2(instance, payload_bytes):
     return b'\x5d' + struct.pack("!H",len(payload_bytes)) + struct.pack("!B",instance) + payload_bytes
 
 def add_timezone_v2():
-    return b'\x72\x00\x02\x00\x00\x00'    
+    return b'\x72\x00\x02\x00\x8a\x02'    
     
     
 ### GTPv2 messages ###
@@ -1145,7 +1145,7 @@ def generic_cli(cli):
     output = str(proc.stdout.read())
     return output
 
-def delete_routes(netns, addresses):
+def delete_routes(netns, addresses, gtp_kernel, teid_local_data, end_user_address):
     # delete previous added routes, and replaces dns resolv.conf file with the previous one (backup)
     for address in addresses:
         if sys.platform == "linux" or sys.platform == "linux2":
@@ -1154,6 +1154,18 @@ def delete_routes(netns, addresses):
     if (dns_addresses != None or dns_addresses_ipv6 != None) and not netns:
         print ("12. Replacing /etc/resolv.conf with the backup file.\n")
         subprocess.call("cp /etc/resolv.backup.conf /etc/resolv.conf", shell=True)  
+    
+    if gtp_kernel == True:
+        subprocess.call("ip addr del " + end_user_address + "/32 dev lo", shell=True)
+        subprocess.call("killall gtp-tunnel", shell=True)
+        subprocess.call("killall gtp-link", shell=True)
+    if netns is not None:
+        subprocess.call("ip netns del " + netns, shell=True)  
+    if gtp_kernel == True:
+        subprocess.call("gtp-tunnel delete gtp1 v1 " + str(teid_local_data), shell=True)
+        subprocess.call("gtp-link del gtp1", shell=True)
+        subprocess.call("modprobe -r gtp", shell=True)        
+
 
 def pco_dns(pco):
     dns_result = []
@@ -1284,6 +1296,7 @@ def main():
     parser.add_option("-R", "--rat", dest="rat", help="Radio Access Type")
     parser.add_option("-Q", "--quit", action="store_true", dest="quit", default=False, help="Quit immediately after activating session")  
     parser.add_option("-N", "--netns", dest="netns", help="Name of network namespace for tun device")
+    parser.add_option("-Z", "--gtp-kernel", action="store_true", dest="gtp_kernel", help="Use GTP Kernel. Needs libgtpnl.", default=False)
 
     (options, args) = parser.parse_args()
 
@@ -1672,34 +1685,35 @@ def main():
                 print ("\n11. Exiting. Deleting PDN Session. Removing routes previously created.")
                 s_gtpc.sendto(delete_session_request(options.gtp_address, options.nodetype), (tunnel_dst_ip_gtpc, GTP_C_REMOTE_PORT))
                 
-            delete_routes(options.netns, remote_destinations)   
+            delete_routes(options.netns, remote_destinations, options.gtp_kernel, teid_local_data, end_user_address)   
             exit(1)         
                 
         ######################################################################
         ###########################  User   Plane  ###########################
         ######################################################################       
 
-        # if control plane is ok, then start GTP-U Socket
-        print (" 5. Creating GTP-U Socket")
-        s_gtpu = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-
-        # Bind socket to local host and port
-        try:
-            if options.ip_source_address is None:
-                s_gtpu.bind((GTP_LOCAL_HOST, GTP_U_LOCAL_PORT))
-            else:
-                s_gtpu.bind((options.ip_source_address, GTP_U_LOCAL_PORT))            
-        except socket.error as msg:
-            print (' 6. Bind failed. Error Code : ' + str(msg[0]) + ' Message ' + msg[1])
-            print (" 7. Deleting route to SGW/PGW/GGSN IP created in step 1. Exiting")
-            if sys.platform == "linux" or sys.platform == "linux2":
-                subprocess.call("route del " + options.tunnel_dst_ip + "/32", shell=True)
-            exit(1)
-
-        # Creates tunnel interface	
-        print (" 6. Creating Tunnel Interface")
-        dev = open_tun(options.dev_id)
-
+        if options.gtp_kernel == False:
+            # if control plane is ok, then start GTP-U Socket
+            print (" 5. Creating GTP-U Socket")
+            s_gtpu = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    
+            # Bind socket to local host and port
+            try:
+                if options.ip_source_address is None:
+                    s_gtpu.bind((GTP_LOCAL_HOST, GTP_U_LOCAL_PORT))
+                else:
+                    s_gtpu.bind((options.ip_source_address, GTP_U_LOCAL_PORT))            
+            except socket.error as msg:
+                print (' 6. Bind failed. Error Code : ' + str(msg[0]) + ' Message ' + msg[1])
+                print (" 7. Deleting route to SGW/PGW/GGSN IP created in step 1. Exiting")
+                if sys.platform == "linux" or sys.platform == "linux2":
+                    subprocess.call("route del " + options.tunnel_dst_ip + "/32", shell=True)
+                exit(1)
+    
+            # Creates tunnel interface	
+            print (" 6. Creating Tunnel Interface")
+            dev = open_tun(options.dev_id)
+    
         if dns_addresses != None or dns_addresses_ipv6 != None:
             print (" 7. DNS: Backing up current /etc/resolv.conf. Creating a new one:")
             if options.netns:
@@ -1769,26 +1783,47 @@ def main():
             except Exception as msg:
                 print (' DHCP Process unsuccessful. Exiting. Message: ' + str(msg) + '\n')
                 if sys.platform == "linux" or  sys.platform == "linux2":
-                    delete_routes(options.netns, remote_destinations) 
+                    delete_routes(options.netns, remote_destinations, options.gtp_kernel, teid_local_data, end_user_address) 
                 exit(1)
         
         if options.netns:
             # create netns and move the tun device into it
             subprocess.call("ip netns add %s" % options.netns, shell=True)
-            subprocess.call("ip link set dev tun%s netns %s" % (str(options.dev_id), options.netns), shell=True)
-            # moving to netns brings device down again so we need to turn it up
-            exec_in_netns(options.netns, "ip link set dev tun%s up" % str(options.dev_id))
-             
+            if options.gtp_kernel == False:
+                subprocess.call("ip link set dev tun%s netns %s" % (str(options.dev_id), options.netns), shell=True)
+                # moving to netns brings device down again so we need to turn it up
+                exec_in_netns(options.netns, "ip link set dev tun%s up" % str(options.dev_id))
+        
+        if options.gtp_kernel == True:
+            subprocess.call("modprobe gtp", shell=True)
+
         if end_user_address != "":         
             if sys.platform == "linux" or sys.platform == "linux2":
-                exec_in_netns(options.netns, "ip addr add " + end_user_address + "/32 dev tun" + str(options.dev_id))
-                if options.netns is not None:
-                    print (" 9.1 Adding default route (0.0.0.0/0) pointing to the tunnel interface")
-                    exec_in_netns(options.netns, "route add -net 0.0.0.0/0 gw " + end_user_address)
+
+                if options.gtp_kernel == False:
+                    exec_in_netns(options.netns, "ip addr add " + end_user_address + "/32 dev tun" + str(options.dev_id))
                 else:
-                    print (" 9.1 Adding default routes (0.0.0.0/1 and 128.0.0.0/1) pointing to the tunnel interface (to prevail over any current default route (0.0.0.0/0) already existing in the system)")    
-                    exec_in_netns(options.netns, "route add -net 0.0.0.0/1 gw " + end_user_address)
-                    exec_in_netns(options.netns, "route add -net 128.0.0.0/1 gw " + end_user_address)
+                    exec_in_netns(options.netns, "ip addr add " + end_user_address + "/32 dev lo")
+                    exec_in_netns(options.netns, "gtp-link add gtp1 --sgsn > /tmp/log-gtp-link1 2>&1 &")
+                    exec_in_netns(options.netns, "gtp-tunnel add gtp1 v1 " + str(teid_local_data) + " " + str(teid_remote_data) + " " + end_user_address + " " + tunnel_dst_ip_gtpu)
+
+
+                if options.netns is not None:
+                    if options.gtp_kernel == False:
+                        print (" 9.1 Adding default route (0.0.0.0/0) pointing to the tunnel interface")
+                        exec_in_netns(options.netns, "route add -net 0.0.0.0/0 gw " + end_user_address)
+                    else:
+                        print (" 9.1.Z Adding default route (0.0.0.0/0) pointing to the gtpu interface")
+                        exec_in_netns(options.netns, "route add -net 0.0.0.0/0 dev gtp1")                        
+                else:
+                    if options.gtp_kernel == False:
+                        print (" 9.1 Adding default routes (0.0.0.0/1 and 128.0.0.0/1) pointing to the tunnel interface (to prevail over any current default route (0.0.0.0/0) already existing in the system)")    
+                        exec_in_netns(options.netns, "route add -net 0.0.0.0/1 gw " + end_user_address)
+                        exec_in_netns(options.netns, "route add -net 128.0.0.0/1 gw " + end_user_address)
+                    else:
+                        print (" 9.1.Z Adding default routes (0.0.0.0/1 and 128.0.0.0/1) pointing to the gtpu interface (to prevail over any current default route (0.0.0.0/0) already existing in the system)")    
+                        exec_in_netns(options.netns, "route add -net 0.0.0.0/1 dev gtp1")
+                        exec_in_netns(options.netns, "route add -net 128.0.0.0/1 dev gtp1")                        
 
         if end_user_address_ipv6 != "":
             # Adds fe80 + identifier. OS processes RouterAdvertisement/RouterSolicitation
@@ -1802,13 +1837,14 @@ def main():
                     exec_in_netns(options.netns, "route -A inet6 add ::/1 dev tun" + str(options.dev_id))
                     exec_in_netns(options.netns, "route -A inet6 add 8000::/1 dev tun" + str(options.dev_id))
    
-        print ("10. Starting threads: GTP-U encapsulation and GTP-U decapsulation.")
-        worker1 = Thread(target = encapsulate_gtp_u, args = ([dev, tunnel_dst_ip_gtpu, teid_remote_data],))
-        worker2 = Thread(target = decapsulate_gtp_u, args = ([dev, tunnel_dst_ip_gtpu, teid_local_data],)) 
-        worker1.setDaemon(True)
-        worker2.setDaemon(True)
-        worker1.start()
-        worker2.start()
+        if options.gtp_kernel == False:
+            print ("10. Starting threads: GTP-U encapsulation and GTP-U decapsulation.")
+            worker1 = Thread(target = encapsulate_gtp_u, args = ([dev, tunnel_dst_ip_gtpu, teid_remote_data],))
+            worker2 = Thread(target = decapsulate_gtp_u, args = ([dev, tunnel_dst_ip_gtpu, teid_local_data],)) 
+            worker1.setDaemon(True)
+            worker2.setDaemon(True)
+            worker1.start()
+            worker2.start()
 
         print ("\nPress q to quit\n")        
 
@@ -1842,7 +1878,7 @@ def main():
                                 dpc_request_msg = decode_gtpc(bytearray(gtp_packet)) # decode to check if request_sequence_number
                                 s_gtpc.sendto(dpc_response(teid_remote_control, request_sequence_number), gtp_address)
                                 print ("\n11. Exiting. Deleting PDP Context (GGSN Initiated). Removing routes previously created.")
-                                delete_routes(options.netns, remote_destinations)  
+                                delete_routes(options.netns, remote_destinations, options.gtp_kernel, teid_local_data, end_user_address)  
                                 exit(1)
                             # update_pdp_context_request?
                             elif gtp_packet[1:2] == b'\x12' and gtp_packet[4:8] == struct.pack("!L", teid_local_control):
@@ -1864,7 +1900,7 @@ def main():
                                                                                                           
                                 s_gtpc.sendto(gtp_response, gtp_address)
                                 print ("\n11. Exiting. Delete Bearer Request received (SGW/PGW Initiated). Removing routes previously created.")
-                                delete_routes(options.netns, remote_destinations)  
+                                delete_routes(options.netns, remote_destinations,  options.gtp_kernel, teid_local_data, end_user_address)  
                                 exit(1)
                             # create bearer request?
                             elif gtp_packet[1:2] == b'\x5f' and gtp_packet[4:8] == struct.pack("!L", teid_local_control):
@@ -1890,7 +1926,7 @@ def main():
                             print ("\n11. Exiting. Deleting PDN Session. Removing routes previously created.")
                             s_gtpc.sendto(delete_session_request(options.gtp_address, options.nodetype), (tunnel_dst_ip_gtpc, GTP_C_REMOTE_PORT))
                             
-                        delete_routes(options.netns, remote_destinations)   
+                        delete_routes(options.netns, remote_destinations,  options.gtp_kernel, teid_local_data, end_user_address)   
                         exit(1)
                         
         os.close(dev)

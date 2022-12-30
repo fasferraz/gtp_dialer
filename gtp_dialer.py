@@ -842,7 +842,7 @@ def add_bearer_context_v2(instance, payload_bytes):
     return b'\x5d' + struct.pack("!H",len(payload_bytes)) + struct.pack("!B",instance) + payload_bytes
 
 def add_timezone_v2():
-    return b'\x72\x00\x02\x00\x8a\x02'    
+    return b'\x72\x00\x02\x00\x8f\x02'    
     
     
 ### GTPv2 messages ###
@@ -1296,7 +1296,8 @@ def main():
     parser.add_option("-R", "--rat", dest="rat", help="Radio Access Type")
     parser.add_option("-Q", "--quit", action="store_true", dest="quit", default=False, help="Quit immediately after activating session")  
     parser.add_option("-N", "--netns", dest="netns", help="Name of network namespace for tun device")
-    parser.add_option("-Z", "--gtp-kernel", action="store_true", dest="gtp_kernel", help="Use GTP Kernel. Needs libgtpnl.", default=False)
+    parser.add_option("-Z", "--gtp-kernel", action="store_true", dest="gtp_kernel", help="Use GTP Kernel. Needs libgtpnl", default=False)
+    parser.add_option("-X", "--no-default", action="store_true", dest="no_default", help="Does not install default route", default=False)
 
     (options, args) = parser.parse_args()
 
@@ -1420,6 +1421,26 @@ def main():
                     subprocess.call("route del " + options.tunnel_dst_ip + "/32", shell=True)
 
                 exit(1)
+
+            if gtp_packet[1:2] == b'\x01':
+                gtp_echo_response = bytearray(gtp_packet) + b'\x0e\x00'
+                gtp_echo_response[1] = 2
+                gtp_echo_response[3] += 2
+                s_gtpc.sendto(gtp_echo_response, gtp_address)
+
+                # alarm triggering for timeout, in case there is no answer from GGSN
+                signal.signal(signal.SIGALRM, signal_handler)
+                signal.alarm(int(options.timeout)) 
+                try:
+                    gtp_packet, gtp_address = s_gtpc.recvfrom(2000)	
+                    signal.alarm(0)
+    
+                except Exception as msg:
+                    print (' 4. No answer from GGSN. Exiting. Message: ' + str(msg) + '\n')
+                    if sys.platform == "linux" or  sys.platform == "linux2":
+                        subprocess.call("route del " + options.tunnel_dst_ip + "/32", shell=True)
+                    exit(1)
+
         
             # gtpc decoding
             cpc_response = decode_gtpc(bytearray(gtp_packet))
@@ -1517,6 +1538,25 @@ def main():
                     subprocess.call("route del " + options.tunnel_dst_ip + "/32", shell=True)
                 exit(1)
         
+            if gtp_packet[1:2] == b'\x01':
+                gtp_echo_response = bytearray(gtp_packet)
+                gtp_echo_response[1] = 2
+                s_gtpc.sendto(gtp_echo_response, gtp_address)
+                
+                # alarm triggering for timeout, in case there is no answer from GGSN
+                signal.signal(signal.SIGALRM, signal_handler)
+                signal.alarm(int(options.timeout)) 
+                try:
+                    gtp_packet, gtp_address = s_gtpc.recvfrom(2000)	
+                    signal.alarm(0)
+    
+                except Exception as msg:
+                    print (' 4. No answer from GGSN. Exiting. Message: ' + str(msg) + '\n')
+                    if sys.platform == "linux" or  sys.platform == "linux2":
+                        subprocess.call("route del " + options.tunnel_dst_ip + "/32", shell=True)
+                    exit(1)
+
+
             # gtpc v2 decoding             
             create_session_response = decode_gtpc_v2(bytearray(gtp_packet))
             if create_session_response == None or create_session_response == -1:
@@ -1807,35 +1847,36 @@ def main():
                     exec_in_netns(options.netns, "gtp-link add gtp1 --sgsn > /tmp/log-gtp-link1 2>&1 &")
                     exec_in_netns(options.netns, "gtp-tunnel add gtp1 v1 " + str(teid_local_data) + " " + str(teid_remote_data) + " " + end_user_address + " " + tunnel_dst_ip_gtpu)
 
-
-                if options.netns is not None:
-                    if options.gtp_kernel == False:
-                        print (" 9.1 Adding default route (0.0.0.0/0) pointing to the tunnel interface")
-                        exec_in_netns(options.netns, "route add -net 0.0.0.0/0 gw " + end_user_address)
+                if options.no_default == False:
+                    if options.netns is not None:
+                        if options.gtp_kernel == False:
+                            print (" 9.1 Adding default route (0.0.0.0/0) pointing to the tunnel interface")
+                            exec_in_netns(options.netns, "route add -net 0.0.0.0/0 gw " + end_user_address)
+                        else:
+                            print (" 9.1.Z Adding default route (0.0.0.0/0) pointing to the gtpu interface")
+                            exec_in_netns(options.netns, "route add -net 0.0.0.0/0 dev gtp1")                        
                     else:
-                        print (" 9.1.Z Adding default route (0.0.0.0/0) pointing to the gtpu interface")
-                        exec_in_netns(options.netns, "route add -net 0.0.0.0/0 dev gtp1")                        
-                else:
-                    if options.gtp_kernel == False:
-                        print (" 9.1 Adding default routes (0.0.0.0/1 and 128.0.0.0/1) pointing to the tunnel interface (to prevail over any current default route (0.0.0.0/0) already existing in the system)")    
-                        exec_in_netns(options.netns, "route add -net 0.0.0.0/1 gw " + end_user_address)
-                        exec_in_netns(options.netns, "route add -net 128.0.0.0/1 gw " + end_user_address)
-                    else:
-                        print (" 9.1.Z Adding default routes (0.0.0.0/1 and 128.0.0.0/1) pointing to the gtpu interface (to prevail over any current default route (0.0.0.0/0) already existing in the system)")    
-                        exec_in_netns(options.netns, "route add -net 0.0.0.0/1 dev gtp1")
-                        exec_in_netns(options.netns, "route add -net 128.0.0.0/1 dev gtp1")                        
+                        if options.gtp_kernel == False:
+                            print (" 9.1 Adding default routes (0.0.0.0/1 and 128.0.0.0/1) pointing to the tunnel interface (to prevail over any current default route (0.0.0.0/0) already existing in the system)")    
+                            exec_in_netns(options.netns, "route add -net 0.0.0.0/1 gw " + end_user_address)
+                            exec_in_netns(options.netns, "route add -net 128.0.0.0/1 gw " + end_user_address)
+                        else:
+                            print (" 9.1.Z Adding default routes (0.0.0.0/1 and 128.0.0.0/1) pointing to the gtpu interface (to prevail over any current default route (0.0.0.0/0) already existing in the system)")    
+                            exec_in_netns(options.netns, "route add -net 0.0.0.0/1 dev gtp1")
+                            exec_in_netns(options.netns, "route add -net 128.0.0.0/1 dev gtp1")                        
 
         if end_user_address_ipv6 != "":
             # Adds fe80 + identifier. OS processes RouterAdvertisement/RouterSolicitation
             if sys.platform == "linux" or sys.platform == "linux2":
                 exec_in_netns(options.netns, "ip -6 addr add " + ipv6_identifier + "/64 dev tun" + str(options.dev_id))
-                if options.netns is not None:
-                    print (" 9.2 Adding default route (::/0) pointing to the tunnel interface")
-                    exec_in_netns(options.netns, "route -A inet6 add ::/0 dev tun" + str(options.dev_id))
-                else:
-                    print (" 9.2 Adding default routes (::/1 and 8000::/1) pointing\ to the tunnel interface (to prevail over any current default route (::/0) already existing in the system)")
-                    exec_in_netns(options.netns, "route -A inet6 add ::/1 dev tun" + str(options.dev_id))
-                    exec_in_netns(options.netns, "route -A inet6 add 8000::/1 dev tun" + str(options.dev_id))
+                if options.no_default == False:
+                    if options.netns is not None:
+                        print (" 9.2 Adding default route (::/0) pointing to the tunnel interface")
+                        exec_in_netns(options.netns, "route -A inet6 add ::/0 dev tun" + str(options.dev_id))
+                    else:
+                        print (" 9.2 Adding default routes (::/1 and 8000::/1) pointing\ to the tunnel interface (to prevail over any current default route (::/0) already existing in the system)")
+                        exec_in_netns(options.netns, "route -A inet6 add ::/1 dev tun" + str(options.dev_id))
+                        exec_in_netns(options.netns, "route -A inet6 add 8000::/1 dev tun" + str(options.dev_id))
    
         if options.gtp_kernel == False:
             print ("10. Starting threads: GTP-U encapsulation and GTP-U decapsulation.")

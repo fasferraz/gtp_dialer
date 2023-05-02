@@ -835,8 +835,8 @@ def add_ambr_v2():
 def add_ebi_v2(instance,ebi):
     return b'\x49\x00\x01' + struct.pack("!B",instance) + bytes([ebi])
 
-def add_bearer_qos_v2(instance):
-    return b'\x50\x00\x16' + struct.pack("!B",instance) + b'\x55\x08\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+def add_bearer_qos_v2(instance, qci):
+    return b'\x50\x00\x16' + struct.pack("!B",instance) + b'\x55' + struct.pack("!B",int(qci)) + b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
 
 def add_bearer_context_v2(instance, payload_bytes):
     return b'\x5d' + struct.pack("!H",len(payload_bytes)) + struct.pack("!B",instance) + payload_bytes
@@ -846,7 +846,7 @@ def add_timezone_v2():
     
     
 ### GTPv2 messages ###
-def create_session_request(apn, gtp_address, imsi, msisdn, pdptype, ggsn, node, fixed_ipv4, fixed_ipv6, username, password, dhcp, cc, operator, rat, imei, authentication_type):
+def create_session_request(apn, gtp_address, imsi, msisdn, pdptype, ggsn, node, fixed_ipv4, fixed_ipv6, username, password, dhcp, cc, operator, rat, imei, authentication_type, qci):
 
     global sequence_number
      
@@ -949,7 +949,7 @@ def create_session_request(apn, gtp_address, imsi, msisdn, pdptype, ggsn, node, 
         gtp_teid_data = add_random_f_teid_v2(6,"s2a_u_twan", gtp_address, 0)        
     else:
         gtp_teid_data = b''
-    gtp_bearer_qos = add_bearer_qos_v2(0)    
+    gtp_bearer_qos = add_bearer_qos_v2(0, qci)    
         
     gtp_bearer_context = add_bearer_context_v2(0,gtp_bearer_id + gtp_teid_data + gtp_bearer_qos)    
     
@@ -1298,6 +1298,7 @@ def main():
     parser.add_option("-N", "--netns", dest="netns", help="Name of network namespace for tun device")
     parser.add_option("-Z", "--gtp-kernel", action="store_true", dest="gtp_kernel", help="Use GTP Kernel. Needs libgtpnl", default=False)
     parser.add_option("-X", "--no-default", action="store_true", dest="no_default", help="Does not install default route", default=False)
+    parser.add_option("-q", "--qci", dest="qci", default="8", help="QCI") 
 
     (options, args) = parser.parse_args()
 
@@ -1517,7 +1518,7 @@ def main():
            
             print (" 3. Sending Create Session Request to SGW/PGW")
             # Create session  
-            s_gtpc.sendto(create_session_request(options.apn_name, options.gtp_address, options.imsi, options.msisdn, options.pdptype, options.ggsn, options.nodetype, options.fixed_ipv4, options.fixed_ipv6, options.username_pco, options.password_pco, options.dhcp, options.cc, options.operator, options.rat, options.imei, options.authentication_type), (options.tunnel_dst_ip, GTP_C_REMOTE_PORT))	
+            s_gtpc.sendto(create_session_request(options.apn_name, options.gtp_address, options.imsi, options.msisdn, options.pdptype, options.ggsn, options.nodetype, options.fixed_ipv4, options.fixed_ipv6, options.username_pco, options.password_pco, options.dhcp, options.cc, options.operator, options.rat, options.imei, options.authentication_type, options.qci), (options.tunnel_dst_ip, GTP_C_REMOTE_PORT))	
 
             # alarm triggering for timeout, in case there is no answer from SGW or PGW
             signal.signal(signal.SIGALRM, signal_handler)

@@ -938,7 +938,7 @@ def create_session_request(apn, gtp_address, imsi, msisdn, pdptype, ggsn, node, 
     gtp_ambr = add_ambr_v2()    
         
     # ie from grouped gtp_bearer_context    
-    gtp_bearer_id = add_ebi_v2(0,5)
+    gtp_bearer_id = add_ebi_v2(0,DEFAULT_NSAPI)
     if node == "SGSN":
         gtp_teid_data = add_random_f_teid_v2(1,"s4_u_sgsn", gtp_address, 0)
     elif node == "SGW":
@@ -984,7 +984,7 @@ def modify_bearer_request(gtp_address, node): # only for mme or sgsn mode
     gtp_header = gtp_flags + gtp_message_type + gtp_length + gtp_teid + gtp_sequence_number + gtp_spare    
 
     
-    gtp_bearer_id = add_ebi_v2(0,5)
+    gtp_bearer_id = add_ebi_v2(0,DEFAULT_NSAPI)
     if node == "SGSN":
         gtp_teid_data = add_random_f_teid_v2(3,"s4_u_sgsn", gtp_address, teid_local_data)
     elif node == "MME":
@@ -1017,7 +1017,7 @@ def delete_session_request(gtp_address, node):
     gtp_spare = b'\x00'
     gtp_header = gtp_flags + gtp_message_type + gtp_length + gtp_teid + gtp_sequence_number + gtp_spare    
 
-    gtp_bearer_id = add_ebi_v2(0,5)
+    gtp_bearer_id = add_ebi_v2(0,DEFAULT_NSAPI)
     
     if node == "SGSN" or node == "MME":
         gtp_indication = add_indication_v2(0,8,0,0,0,0,0)
@@ -1061,7 +1061,7 @@ def create_bearer_response(sequence_number):  # current version rejects dedicate
     gtp_header = gtp_flags + gtp_message_type + gtp_length + gtp_teid + gtp_sequence_number + gtp_spare  
 
     gtp_cause = b'\x02\x00\x02\x00\x72\x01'
-    gtp_bearer_id = add_ebi_v2(0,6)
+    gtp_bearer_id = add_ebi_v2(0,DEFAULT_NSAPI+1)
     
     gtp_bearer_context = add_bearer_context_v2(0,gtp_bearer_id + gtp_cause) 
     
@@ -1089,7 +1089,7 @@ def update_bearer_response(sequence_number):
     gtp_header = gtp_flags + gtp_message_type + gtp_length + gtp_teid + gtp_sequence_number + gtp_spare  
 
     gtp_cause = b'\x02\x00\x02\x00\x10\x00'
-    gtp_bearer_id = add_ebi_v2(0,5)
+    gtp_bearer_id = add_ebi_v2(0,DEFAULT_NSAPI)
     
     gtp_bearer_context = add_bearer_context_v2(0,gtp_bearer_id + gtp_cause) 
     

@@ -272,8 +272,8 @@ def add_imsi(imsi):
     imsi = bcd(imsi)
     return b'\x02' + imsi
 
-def add_selection_mode():
-    return b'\x0f\xfc'
+def add_selection_mode(sel_mode):
+    return b'\x0f' + bytes([(252+int(sel_mode)) % 256])  
 
 def add_random_teid(teid_type):
     global teid_local_control, teid_local_data
@@ -358,14 +358,14 @@ def add_pco(pdptype, username, password, dhcp_flag, authentication_type):
         len_pco += 3
 
     if pdptype == "ipv4":
-        len_pco = struct.pack("!H", 32 + len_pco)        
-        return b'\x84' + len_pco + b'\x80\x80\x21\x1c\x01\x00\x00\x1c\x81\x06\x00\x00\x00\x00\x82\x06\x00\x00\x00\x00\x83\x06\x00\x00\x00\x00\x84\x06\x00\x00\x00\x00' + pap + chap + dhcp
-    elif pdptype == "ipv6":
-        len_pco = struct.pack("!H", 4 + len_pco)        
-        return b'\x84' + len_pco + b'\x80\x00\x03\x00' + pap + chap + dhcp
-    elif pdptype == "ipv4v6":
         len_pco = struct.pack("!H", 35 + len_pco)        
-        return b'\x84' + len_pco + b'\x80\x80\x21\x1c\x01\x00\x00\x1c\x81\x06\x00\x00\x00\x00\x82\x06\x00\x00\x00\x00\x83\x06\x00\x00\x00\x00\x84\x06\x00\x00\x00\x00\x00\x03\x00' + pap + chap + dhcp
+        return b'\x84' + len_pco + b'\x80\x80\x21\x1c\x01\x00\x00\x1c\x81\x06\x00\x00\x00\x00\x82\x06\x00\x00\x00\x00\x83\x06\x00\x00\x00\x00\x84\x06\x00\x00\x00\x00\x00\x0c\x00' + pap + chap + dhcp
+    elif pdptype == "ipv6":
+        len_pco = struct.pack("!H", 7 + len_pco)        
+        return b'\x84' + len_pco + b'\x80\x00\x03\x00\x00\x01\x00' + pap + chap + dhcp
+    elif pdptype == "ipv4v6":
+        len_pco = struct.pack("!H", 41 + len_pco)        
+        return b'\x84' + len_pco + b'\x80\x80\x21\x1c\x01\x00\x00\x1c\x81\x06\x00\x00\x00\x00\x82\x06\x00\x00\x00\x00\x83\x06\x00\x00\x00\x00\x84\x06\x00\x00\x00\x00\x00\x03\x00\x00\x0c\x00\x00\x01\x00' + pap + chap + dhcp
 
 def add_qos():
     # quick version. requests 70Mbits DL and 5.8Mbits UL
@@ -402,7 +402,7 @@ def add_private_extension(identifier, value, value2):
     
 
 ### GTPv1 messages ###    
-def cpc_request(apn, gtp_address, imsi, msisdn, pdptype, username, password, ggsn, username_pco, password_pco, dhcp, cc, operator, imei, authentication_type, rat):
+def cpc_request(apn, gtp_address, imsi, msisdn, pdptype, username, password, ggsn, username_pco, password_pco, dhcp, cc, operator, imei, authentication_type, rat, sel_mode):
 
     global sequence_number
     
@@ -417,7 +417,7 @@ def cpc_request(apn, gtp_address, imsi, msisdn, pdptype, username, password, ggs
 
     gtp_imsi = add_imsi(imsi)
     gtp_routing_area_identity = add_routing_area_identity(operator)
-    gtp_selection_mode = add_selection_mode()    
+    gtp_selection_mode = add_selection_mode(sel_mode)    
     gtp_teid_local_data = add_random_teid("data")
     gtp_teid_local_control = add_random_teid("control")
     gtp_nsapi = add_nsapi(DEFAULT_NSAPI)
@@ -758,8 +758,8 @@ def add_apn_v2(instance,apn,operator):
         apn_bytes += struct.pack("!B", len(word)) + word.encode()  
     return b'\x47' + struct.pack("!H",len(apn_bytes)) + struct.pack("!B",instance) + apn_bytes  
 
-def add_selection_mode_v2():
-    return b'\x80\x00\x01\x00\x00'
+def add_selection_mode_v2(sel_mode):
+    return b'\x80\x00\x01\x00' + bytes([int(sel_mode) % 256])
 
 def add_pco_v2(pdptype, username, password, dhcp_flag, authentication_type, node):
     len_pco = 0
@@ -805,15 +805,15 @@ def add_pco_v2(pdptype, username, password, dhcp_flag, authentication_type, node
         ie_type = b'\xa3' # Additional PCO (APCO) for ePDG and TWAN
     
     if pdptype == "ipv4":
-        len_pco = struct.pack("!H", 32 + len_pco)
-        return ie_type + len_pco + b'\x00\x80\x80\x21\x1c\x01\x00\x00\x1c\x81\x06\x00\x00\x00\x00\x82\x06\x00\x00\x00\x00\x83\x06\x00\x00\x00\x00\x84\x06\x00\x00\x00\x00' + pap + chap + dhcp
+        len_pco = struct.pack("!H", 35 + len_pco)
+        return ie_type + len_pco + b'\x00\x80\x80\x21\x1c\x01\x00\x00\x1c\x81\x06\x00\x00\x00\x00\x82\x06\x00\x00\x00\x00\x83\x06\x00\x00\x00\x00\x84\x06\x00\x00\x00\x00\x00\x0c\x00' + pap + chap + dhcp
     elif pdptype == "ipv6":
-        len_pco = struct.pack("!H", 4 + len_pco)        
-        return ie_type + len_pco + b'\x00\x80\x00\x03\x00' + pap + chap + dhcp
+        len_pco = struct.pack("!H", 7 + len_pco)        
+        return ie_type + len_pco + b'\x00\x80\x00\x03\x00\x00\x01\x00' + pap + chap + dhcp
 
     elif pdptype == "ipv4v6":
-        len_pco = struct.pack("!H", 35 + len_pco)        
-        return ie_type + len_pco + b'\x00\x80\x80\x21\x1c\x01\x00\x00\x1c\x81\x06\x00\x00\x00\x00\x82\x06\x00\x00\x00\x00\x83\x06\x00\x00\x00\x00\x84\x06\x00\x00\x00\x00\x00\x03\x00' + pap + chap + dhcp
+        len_pco = struct.pack("!H", 41 + len_pco)        
+        return ie_type + len_pco + b'\x00\x80\x80\x21\x1c\x01\x00\x00\x1c\x81\x06\x00\x00\x00\x00\x82\x06\x00\x00\x00\x00\x83\x06\x00\x00\x00\x00\x84\x06\x00\x00\x00\x00\x00\x03\x00\x00\x0c\x00\x00\x01\x00' + pap + chap + dhcp
  
 def add_pdn_type_v2(instance,pdn_type):
     return b'\x63\x00\x01\x00' + bytes([pdn_type])
@@ -846,7 +846,7 @@ def add_timezone_v2():
     
     
 ### GTPv2 messages ###
-def create_session_request(apn, gtp_address, imsi, msisdn, pdptype, ggsn, node, fixed_ipv4, fixed_ipv6, username, password, dhcp, cc, operator, rat, imei, authentication_type, qci):
+def create_session_request(apn, gtp_address, imsi, msisdn, pdptype, ggsn, node, fixed_ipv4, fixed_ipv6, username, password, dhcp, cc, operator, rat, imei, authentication_type, qci, sel_mode):
 
     global sequence_number
      
@@ -904,7 +904,7 @@ def create_session_request(apn, gtp_address, imsi, msisdn, pdptype, ggsn, node, 
         gtp_teid_control = add_random_f_teid_v2(0,"s2a_c_twan", gtp_address, 0)
         
     gtp_apn = add_apn_v2(0,apn,operator)     
-    gtp_selection_mode = add_selection_mode_v2()     
+    gtp_selection_mode = add_selection_mode_v2(sel_mode)     
         
     if pdptype == "ipv4":
         gtp_pdn_type = add_pdn_type_v2(0,1)
@@ -1202,6 +1202,38 @@ def pco_dns_ipv6(pco):
         return None   
 
 
+def pco_pcscf(pco):
+    pcscf_result = []
+    # fast method to search for PCSCF without decoding PCO IE
+    if len(pco) > 6:
+        for i in range(len(pco)-6):
+            if pco[i] == 0 and pco[i+1] == 12 and pco[i+2] == 4:
+                pcscf = socket.inet_ntoa(bytes(pco[i+3:i+7]))
+                pcscf_result.append(pcscf)
+        if pcscf_result == []:
+            return None
+        else:
+            return pcscf_result
+    else:
+        return None   
+
+def pco_pcscf_ipv6(pco):
+    pcscf_result = []
+    # fast method to search for P-CSCF IPv6 without decoding PCO IE
+    if len(pco) > 18:
+        for i in range(len(pco)-18):
+            if pco[i] == 0 and pco[i+1] == 1 and pco[i+2] == 16:
+                pcscf = socket.inet_ntop(socket.AF_INET6, bytes(pco[i+3:i+19]))
+                pcscf_result.append(pcscf)
+        if pcscf_result == []:
+            return None
+        else:
+            return pcscf_result
+    else:
+        return None
+
+
+
 #######################################################################        
 	
 def encapsulate_gtp_u(args):  
@@ -1299,6 +1331,7 @@ def main():
     parser.add_option("-Z", "--gtp-kernel", action="store_true", dest="gtp_kernel", help="Use GTP Kernel. Needs libgtpnl", default=False)
     parser.add_option("-X", "--no-default", action="store_true", dest="no_default", help="Does not install default route", default=False)
     parser.add_option("-q", "--qci", dest="qci", default="8", help="QCI") 
+    parser.add_option("--selmode", dest="sel_mode", default="0", help="Selection Mode (0, 1 oe 2)") 
 
     (options, args) = parser.parse_args()
 
@@ -1401,7 +1434,7 @@ def main():
 
             print (" 3. Sending Create PDP Context to GGSN")
             # Create session 
-            s_gtpc.sendto(cpc_request(options.apn_name, options.gtp_address, options.imsi, options.msisdn, options.pdptype, options.username, options.password, options.ggsn, options.username_pco, options.password_pco, options.dhcp, options.cc, options.operator, options.imei, options.authentication_type, options.rat), (options.tunnel_dst_ip, GTP_C_REMOTE_PORT))	
+            s_gtpc.sendto(cpc_request(options.apn_name, options.gtp_address, options.imsi, options.msisdn, options.pdptype, options.username, options.password, options.ggsn, options.username_pco, options.password_pco, options.dhcp, options.cc, options.operator, options.imei, options.authentication_type, options.rat, options.sel_mode), (options.tunnel_dst_ip, GTP_C_REMOTE_PORT))	
 
             # alarm triggering for timeout, in case there is no answer from GGSN
             signal.signal(signal.SIGALRM, signal_handler)
@@ -1504,9 +1537,13 @@ def main():
             teid_remote_control = struct.unpack("!L", cpc_response[17])[0]
             print ('    => TEID Control Remote: ' + str(teid_remote_control))
             dns_addresses = pco_dns(cpc_response[132])
-            print ('    => DNS Addresses Ipv4: ' + str(dns_addresses))
+            print ('    => DNS Addresses IPv4: ' + str(dns_addresses))
             dns_addresses_ipv6 = pco_dns_ipv6(cpc_response[132])
             print ('    => DNS Addresses IPv6: ' + str(dns_addresses_ipv6))
+            pcscf_addresses = pco_pcscf(cpc_response[132])
+            print ('    => P-CSCF Addresses IPv4: ' + str(pcscf_addresses))
+            pcscf_addresses_ipv6 = pco_pcscf_ipv6(cpc_response[132])
+            print ('    => P-CSCF Addresses IPv6: ' + str(pcscf_addresses_ipv6))
             if end_user_address == "" and end_user_address_ipv6 == "":
                 print (" 5. No End-User Address Received. Exiting.\n")
                 exit(1)
@@ -1518,7 +1555,7 @@ def main():
            
             print (" 3. Sending Create Session Request to SGW/PGW")
             # Create session  
-            s_gtpc.sendto(create_session_request(options.apn_name, options.gtp_address, options.imsi, options.msisdn, options.pdptype, options.ggsn, options.nodetype, options.fixed_ipv4, options.fixed_ipv6, options.username_pco, options.password_pco, options.dhcp, options.cc, options.operator, options.rat, options.imei, options.authentication_type, options.qci), (options.tunnel_dst_ip, GTP_C_REMOTE_PORT))	
+            s_gtpc.sendto(create_session_request(options.apn_name, options.gtp_address, options.imsi, options.msisdn, options.pdptype, options.ggsn, options.nodetype, options.fixed_ipv4, options.fixed_ipv6, options.username_pco, options.password_pco, options.dhcp, options.cc, options.operator, options.rat, options.imei, options.authentication_type, options.qci, options.sel_mode), (options.tunnel_dst_ip, GTP_C_REMOTE_PORT))	
 
             # alarm triggering for timeout, in case there is no answer from SGW or PGW
             signal.signal(signal.SIGALRM, signal_handler)
@@ -1664,14 +1701,22 @@ def main():
             print ('    => TEID Control Remote: ' + str(teid_remote_control))
             if options.nodetype in ("SGSN", "MME", "SGW"):
                 dns_addresses = pco_dns(create_session_response[(78,0)])
-                print ('    => DNS Addresses Ipv4: ' + str(dns_addresses))
+                print ('    => DNS Addresses IPv4: ' + str(dns_addresses))
                 dns_addresses_ipv6 = pco_dns_ipv6(create_session_response[(78,0)])
                 print ('    => DNS Addresses IPv6: ' + str(dns_addresses_ipv6))
+                pcscf_addresses = pco_pcscf(create_session_response[(78,0)])
+                print ('    => P-CSCF Addresses IPv4: ' + str(pcscf_addresses))
+                pcscf_addresses_ipv6 = pco_pcscf_ipv6(create_session_response[(78,0)])
+                print ('    => P-CSCF Addresses IPv6: ' + str(pcscf_addresses_ipv6))
             else:
                 dns_addresses = pco_dns(create_session_response[(163,0)])
-                print ('    => DNS Addresses Ipv4: ' + str(dns_addresses))
+                print ('    => DNS Addresses IPv4: ' + str(dns_addresses))
                 dns_addresses_ipv6 = pco_dns_ipv6(create_session_response[(163,0)])
-                print ('    => DNS Addresses IPv6: ' + str(dns_addresses_ipv6))                
+                print ('    => DNS Addresses IPv6: ' + str(dns_addresses_ipv6))
+                pcscf_addresses = pco_pcscf(create_session_response[(163,0)])
+                print ('    => P-CSCF Addresses IPv4: ' + str(pcscf_addresses))
+                pcscf_addresses_ipv6 = pco_pcscf_ipv6(create_session_response[(163,0)])
+                print ('    => P-CSCF Addresses IPv6: ' + str(pcscf_addresses_ipv6))               
                 
             if end_user_address == "" and end_user_address_ipv6 == "":
                 print (" 5. No End-User Address Received. Exiting.\n")

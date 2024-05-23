@@ -1403,7 +1403,7 @@ def main():
         print (" 1. Adding route to GGSN IP Address pointing to the current default gateway")
         # Add route for destination Node ip address pointing to the default gateway
         if sys.platform == "linux" or sys.platform == "linux2":
-            subprocess.call("route add " + options.tunnel_dst_ip + "/32 gw " + options.gateway_ip_address, shell=True)
+            subprocess.call("route add " + options.tunnel_dst_ip + " gw " + options.gateway_ip_address, shell=True)
 
         ######################################################################
         ##########################  Control  Plane  ##########################

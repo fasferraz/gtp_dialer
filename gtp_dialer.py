@@ -1193,7 +1193,8 @@ def pco_dns(pco):
                 dns_result.append(dns_primary)
                 dns_result.append(dns_secondary)
                 return dns_result
-            elif pco[i] == 129 and pco[i+1] == 6:
+        for i in range(len(pco)-6+1):            
+            if pco[i] == 129 and pco[i+1] == 6:
                 dns_primary = socket.inet_ntoa(bytes(pco[i+2:i+6]))
                 dns_result.append(dns_primary)
                 return dns_result

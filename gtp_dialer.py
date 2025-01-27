@@ -402,7 +402,7 @@ def add_private_extension(identifier, value, value2):
     
 
 ### GTPv1 messages ###    
-def cpc_request(apn, gtp_address, imsi, msisdn, pdptype, username, password, ggsn, username_pco, password_pco, dhcp, cc, operator, imei, authentication_type, rat, sel_mode):
+def cpc_request(apn, gtp_address, imsi, msisdn, pdptype, username, password, ggsn, username_pco, password_pco, dhcp, cc, operator, imei, authentication_type, rat, sel_mode, gtp_u_address):
 
     global sequence_number
     
@@ -432,6 +432,7 @@ def cpc_request(apn, gtp_address, imsi, msisdn, pdptype, username, password, ggs
     gtp_apn = add_apn(apn)
     gtp_pco = add_pco(pdptype, username_pco, password_pco, dhcp, authentication_type)    
     gtp_gsn_address = add_gsn_address(gtp_address)
+    gtp_gsn_u_address = add_gsn_address(gtp_u_address)
     gtp_msisdn = add_msisdn(msisdn)
     gtp_qos = add_qos()   
     gtp_common_flags = add_common_flags()
@@ -441,7 +442,7 @@ def cpc_request(apn, gtp_address, imsi, msisdn, pdptype, username, password, ggs
         gtp_rat = add_rat(int(rat))    
     gtp_imei = add_imei(imei)
     
-    gtp_ie = gtp_imsi + gtp_routing_area_identity + gtp_selection_mode + gtp_teid_local_data + gtp_teid_local_control + gtp_nsapi + gtp_cc + gtp_end_user_address + gtp_apn + gtp_pco + gtp_gsn_address + gtp_gsn_address + gtp_msisdn + gtp_qos + gtp_common_flags + gtp_rat + gtp_imei
+    gtp_ie = gtp_imsi + gtp_routing_area_identity + gtp_selection_mode + gtp_teid_local_data + gtp_teid_local_control + gtp_nsapi + gtp_cc + gtp_end_user_address + gtp_apn + gtp_pco + gtp_gsn_address + gtp_gsn_u_address + gtp_msisdn + gtp_qos + gtp_common_flags + gtp_rat + gtp_imei
 
     if username is not None and password is not None:
         gtp_pe1 = add_private_extension(0, username,None)
@@ -594,32 +595,36 @@ def decode_gtpc_v2(gtp_packet):
     global request_sequence_number
 
     valid = 0
+    response = False
+    if int(gtp_packet[0]) // 16 == 4 and gtp_packet[4:8] == struct.pack("!L", teid_local_control) and int(gtp_packet[1]) % 2 == 1: #Response
+        pointer = 12
+        valid = 1
+        response = True
 
-    if int(gtp_packet[0]) // 16 == 4 and gtp_packet[4:8] == struct.pack("!L", teid_local_control) and int(gtp_packet[1]) % 2 == 1: #Response and Cause =128,129,130
-        if (gtp_packet[16:17] == b'\x10' or gtp_packet[16:17] == b'\x11' or gtp_packet[16:17] == b'\x12' or gtp_packet[16:17] == b'\x13'):
-            pointer = 12
-            valid = 1
-        else:  
-            return -1
-            
     elif int(gtp_packet[0]) // 16 == 4 and gtp_packet[4:8] == struct.pack("!L", teid_local_control) and int(gtp_packet[1]) % 2 == 0: #Requests
         pointer = 12
         valid = 1
         request_sequence_number = gtp_packet[8:11]
-    
+
     if valid == 1:
         decode_dict = {}
-        while pointer < len(gtp_packet):    
+        while pointer < len(gtp_packet):
             type = gtp_packet[pointer]
             instance = gtp_packet[pointer + 3]
             length = 256 * gtp_packet[pointer + 1] + gtp_packet[pointer + 2]
-        
-            decode_dict[(type,instance)]= gtp_packet[pointer+4:pointer+4+length]                    
+
+            decode_dict[(type,instance)]= gtp_packet[pointer+4:pointer+4+length]
             pointer += 4 + length
-        
+        if response:
+            if (2,0) in decode_dict: # Cause
+                if decode_dict[(2,0)][0:1] == b'\x10' or decode_dict[(2,0)][0:1] == b'\x11' or decode_dict[(2,0)][0:1] == b'\x12' or decode_dict[(2,0)][0:1] == b'\x13':
+                    return decode_dict
+            else:
+                return -1
         return decode_dict
     else:
-        return None    
+        return None
+       
     
 def decode_ie_v2(gtp_packet):
 
@@ -846,7 +851,7 @@ def add_timezone_v2():
     
     
 ### GTPv2 messages ###
-def create_session_request(apn, gtp_address, imsi, msisdn, pdptype, ggsn, node, fixed_ipv4, fixed_ipv6, username, password, dhcp, cc, operator, rat, imei, authentication_type, qci, sel_mode):
+def create_session_request(apn, gtp_address, imsi, msisdn, pdptype, ggsn, node, fixed_ipv4, fixed_ipv6, username, password, dhcp, cc, operator, rat, imei, authentication_type, qci, sel_mode, gtp_u_address):
 
     global sequence_number
      
@@ -940,13 +945,13 @@ def create_session_request(apn, gtp_address, imsi, msisdn, pdptype, ggsn, node, 
     # ie from grouped gtp_bearer_context    
     gtp_bearer_id = add_ebi_v2(0,DEFAULT_NSAPI)
     if node == "SGSN":
-        gtp_teid_data = add_random_f_teid_v2(1,"s4_u_sgsn", gtp_address, 0)
+        gtp_teid_data = add_random_f_teid_v2(1,"s4_u_sgsn", gtp_u_address, 0)
     elif node == "SGW":
-        gtp_teid_data = add_random_f_teid_v2(2,"s5_u_sgw", gtp_address, 0)
+        gtp_teid_data = add_random_f_teid_v2(2,"s5_u_sgw", gtp_u_address, 0)
     elif node == "EPDG":
-        gtp_teid_data = add_random_f_teid_v2(5,"s2b_u_epdg", gtp_address, 0)
+        gtp_teid_data = add_random_f_teid_v2(5,"s2b_u_epdg", gtp_u_address, 0)
     elif node == "TWAN":
-        gtp_teid_data = add_random_f_teid_v2(6,"s2a_u_twan", gtp_address, 0)        
+        gtp_teid_data = add_random_f_teid_v2(6,"s2a_u_twan", gtp_u_address, 0)        
     else:
         gtp_teid_data = b''
     gtp_bearer_qos = add_bearer_qos_v2(0, qci)    
@@ -1155,16 +1160,26 @@ def delete_routes(netns, addresses, gtp_kernel, teid_local_data, end_user_addres
         print ("12. Replacing /etc/resolv.conf with the backup file.\n")
         subprocess.call("cp /etc/resolv.backup.conf /etc/resolv.conf", shell=True)  
     
-    if gtp_kernel == True:
+    if gtp_kernel == True and netns is None:
         subprocess.call("ip addr del " + end_user_address + "/32 dev lo", shell=True)
+        subprocess.call("gtp-tunnel delete gtp1 v1 " + str(teid_local_data) + " ip", shell=True)
+        subprocess.call("gtp-link del gtp1", shell=True)  
         subprocess.call("killall gtp-tunnel", shell=True)
         subprocess.call("killall gtp-link", shell=True)
+    
+    if gtp_kernel == True and netns is not None:
+        subprocess.call("ip link del veth1", shell=True)
+        exec_in_netns(options.netns, "gtp-tunnel delete gtp1 v1 " + str(teid_local_data) + " ip")
+        exec_in_netns(options.netns, "gtp-link del gtp1")        
+        exec_in_netns(options.netns, "killall gtp-tunnel")
+        exec_in_netns(options.netns, "killall gtp-link")
+
+    if gtp_kernel == True:
+        subprocess.call("modprobe -r gtp", shell=True)
+
     if netns is not None:
         subprocess.call("ip netns del " + netns, shell=True)  
-    if gtp_kernel == True:
-        subprocess.call("gtp-tunnel delete gtp1 v1 " + str(teid_local_data), shell=True)
-        subprocess.call("gtp-link del gtp1", shell=True)
-        subprocess.call("modprobe -r gtp", shell=True)        
+    
 
 
 def pco_dns(pco):
@@ -1332,11 +1347,15 @@ def main():
     parser.add_option("-X", "--no-default", action="store_true", dest="no_default", help="Does not install default route", default=False)
     parser.add_option("-q", "--qci", dest="qci", default="8", help="QCI") 
     parser.add_option("--selmode", dest="sel_mode", default="0", help="Selection Mode (0, 1 oe 2)") 
+    parser.add_option("--gtp_u_source_address", dest="gtp_u_address", help="GTP source address for GTP-U") 
+    parser.add_option("--ip_source_address_gtpu", dest="ip_source_address_gtpu", help="IP source address for GTP-U. If not specified it will the same value as --ip_source_address")
+    parser.add_option("--ip_net_veth_gtpu", dest="ip_net_veth_gtpu", help="IP/Mask of veth for GTP-U. --ip_source_address_gtpu must be set and belong to the same network. Routing for this network must exist (downlink must reach host machine)")
+
 
     (options, args) = parser.parse_args()
 
     if options.version == True:
-        print("GTP Dialer: Version 3.0 by Fabricio Ferraz (fasferraz@gmail.com) 2022")
+        print("GTP Dialer: Version 4.0 by Fabricio Ferraz (fasferraz@gmail.com) 2024")
         exit(1)  
     if options.password_to_hash is not None:
         m = hashlib.md5()
@@ -1382,7 +1401,19 @@ def main():
             exit(1)           
         if len(options.cc) != 4:
             print ("CC should be 4 hex digits long")
-            exit(1)         
+            exit(1)    
+        if options.netns is not None and options.gtp_kernel == True:
+            if options.ip_net_veth_gtpu is None or options.ip_source_address_gtpu is None or options.gtp_u_address is None:
+                print("option --ip_net_veth_gtpu must be set. IP/Mask of veth for GTP-U")
+                print("option --ip_source_address_gtpu must be set and belong to the same network as --ip_net_veth_gtpu.")
+                print("option --gtp_u_source_address must be set. GTP source address for GTP-U must match ip_source_address_gtpu")
+                print("Routing for this network must exist (downlink must reach host machine)")
+                exit(1)
+        if options.gtp_u_address is None:
+            options.gtp_u_address = options.gtp_address
+        if options.ip_source_address_gtpu is None:
+            options.ip_source_address_gtpu = options.ip_source_address
+             
 
         teid_remote_data = 0
         teid_local_data = 0
@@ -1434,7 +1465,7 @@ def main():
 
             print (" 3. Sending Create PDP Context to GGSN")
             # Create session 
-            s_gtpc.sendto(cpc_request(options.apn_name, options.gtp_address, options.imsi, options.msisdn, options.pdptype, options.username, options.password, options.ggsn, options.username_pco, options.password_pco, options.dhcp, options.cc, options.operator, options.imei, options.authentication_type, options.rat, options.sel_mode), (options.tunnel_dst_ip, GTP_C_REMOTE_PORT))	
+            s_gtpc.sendto(cpc_request(options.apn_name, options.gtp_address, options.imsi, options.msisdn, options.pdptype, options.username, options.password, options.ggsn, options.username_pco, options.password_pco, options.dhcp, options.cc, options.operator, options.imei, options.authentication_type, options.rat, options.sel_mode, options.gtp_u_address), (options.tunnel_dst_ip, GTP_C_REMOTE_PORT))	
 
             # alarm triggering for timeout, in case there is no answer from GGSN
             signal.signal(signal.SIGALRM, signal_handler)
@@ -1555,7 +1586,7 @@ def main():
            
             print (" 3. Sending Create Session Request to SGW/PGW")
             # Create session  
-            s_gtpc.sendto(create_session_request(options.apn_name, options.gtp_address, options.imsi, options.msisdn, options.pdptype, options.ggsn, options.nodetype, options.fixed_ipv4, options.fixed_ipv6, options.username_pco, options.password_pco, options.dhcp, options.cc, options.operator, options.rat, options.imei, options.authentication_type, options.qci, options.sel_mode), (options.tunnel_dst_ip, GTP_C_REMOTE_PORT))	
+            s_gtpc.sendto(create_session_request(options.apn_name, options.gtp_address, options.imsi, options.msisdn, options.pdptype, options.ggsn, options.nodetype, options.fixed_ipv4, options.fixed_ipv6, options.username_pco, options.password_pco, options.dhcp, options.cc, options.operator, options.rat, options.imei, options.authentication_type, options.qci, options.sel_mode, options.gtp_u_address), (options.tunnel_dst_ip, GTP_C_REMOTE_PORT))	
 
             # alarm triggering for timeout, in case there is no answer from SGW or PGW
             signal.signal(signal.SIGALRM, signal_handler)
@@ -1785,10 +1816,10 @@ def main():
     
             # Bind socket to local host and port
             try:
-                if options.ip_source_address is None:
+                if options.ip_source_address_gtpu is None:
                     s_gtpu.bind((GTP_LOCAL_HOST, GTP_U_LOCAL_PORT))
                 else:
-                    s_gtpu.bind((options.ip_source_address, GTP_U_LOCAL_PORT))            
+                    s_gtpu.bind((options.ip_source_address_gtpu, GTP_U_LOCAL_PORT))            
             except socket.error as msg:
                 print (' 6. Bind failed. Error Code : ' + str(msg[0]) + ' Message ' + msg[1])
                 print (" 7. Deleting route to SGW/PGW/GGSN IP created in step 1. Exiting")
@@ -1890,7 +1921,28 @@ def main():
                     exec_in_netns(options.netns, "ip addr add " + end_user_address + "/32 dev tun" + str(options.dev_id))
                 else:
                     exec_in_netns(options.netns, "ip addr add " + end_user_address + "/32 dev lo")
-                    exec_in_netns(options.netns, "gtp-link add gtp1 --sgsn > /tmp/log-gtp-link1 2>&1 &")
+
+                    exec_in_netns(False,"ip link add veth1 type veth peer name nsveth1")
+                    exec_in_netns(False,"ip link set nsveth1 netns " + options.netns)
+                    exec_in_netns(options.netns, "ifconfig nsveth1 " + options.ip_source_address_gtpu + '/' + options.ip_net_veth_gtpu.split("/")[1] + " up")
+                    exec_in_netns(False, "ip link set veth1 up")
+                    exec_in_netns(False, "ip addr add " + options.ip_net_veth_gtpu + " dev veth1")
+
+                    # add routes to possible different control or userplane IP addresses received in CreateSessionResponse or CreatePDPContextResponse in namespace
+                    if options.netns is not None:
+                        exec_in_netns(options.netns, "ip route add " + options.tunnel_dst_ip + "/32 via " + options.ip_net_veth_gtpu.split("/")[0] + " dev nsveth1")
+                        if len(remote_destinations) > 1:
+                            for index, address in enumerate(remote_destinations):
+                                if index !=0:
+                                    if sys.platform == "linux" or sys.platform == "linux2":
+                                        exec_in_netns(options.netns, "ip route add " + address + "/32 via " + options.ip_net_veth_gtpu.split("/")[0] + " dev nsveth1")
+
+
+                    if options.ip_source_address_gtpu is None:
+                        exec_in_netns(options.netns, "gtp-link add gtp1 ip --sgsn > /tmp/log-gtp-link1 2>&1 &")
+                    else:
+                        exec_in_netns(options.netns, "gtp-link add gtp1 ip --sgsn " + options.ip_source_address_gtpu + " > /tmp/log-gtp-link1 2>&1 &") 
+                        
                     exec_in_netns(options.netns, "gtp-tunnel add gtp1 v1 " + str(teid_local_data) + " " + str(teid_remote_data) + " " + end_user_address + " " + tunnel_dst_ip_gtpu)
 
                 if options.no_default == False:

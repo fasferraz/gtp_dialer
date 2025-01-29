@@ -619,6 +619,8 @@ def decode_gtpc_v2(gtp_packet):
             if (2,0) in decode_dict: # Cause
                 if decode_dict[(2,0)][0:1] == b'\x10' or decode_dict[(2,0)][0:1] == b'\x11' or decode_dict[(2,0)][0:1] == b'\x12' or decode_dict[(2,0)][0:1] == b'\x13':
                     return decode_dict
+                else:
+                    return -1
             else:
                 return -1
         return decode_dict

@@ -1719,39 +1719,44 @@ def main():
             if options.nodetype == "SGW":
                 teid_remote_data = struct.unpack("!L", bearer_context_decode[(87,2)][1:5])[0]
             elif options.nodetype == "SGSN":
-                teid_remote_data = struct.unpack("!L", bearer_context_decode[(87,1)][1:5])[0]    
+                teid_remote_data = struct.unpack("!L", bearer_context_decode[(87,1)][1:5])[0]
             elif options.nodetype == "MME":
                 teid_remote_data = struct.unpack("!L", bearer_context_decode[(87,0)][1:5])[0]
             elif options.nodetype == "EPDG":
                 teid_remote_data = struct.unpack("!L", bearer_context_decode[(87,4)][1:5])[0]
             elif options.nodetype == "TWAN":
-                teid_remote_data = struct.unpack("!L", bearer_context_decode[(87,5)][1:5])[0]                
+                teid_remote_data = struct.unpack("!L", bearer_context_decode[(87,5)][1:5])[0]
             print ('    => TEID Data Remote: ' + str(teid_remote_data))
-    
+
             if options.nodetype in ("SGW", "EPDG", "TWAN"):
-                teid_remote_control = struct.unpack("!L", create_session_response[(87,1)][1:5])[0]                
+                teid_remote_control = struct.unpack("!L", create_session_response[(87,1)][1:5])[0]
             else:
-                teid_remote_control = struct.unpack("!L", create_session_response[(87,0)][1:5])[0]                
+                teid_remote_control = struct.unpack("!L", create_session_response[(87,0)][1:5])[0]
             print ('    => TEID Control Remote: ' + str(teid_remote_control))
+
+            dns_addresses = None
+            dns_addresses_ipv6 = None
             if options.nodetype in ("SGSN", "MME", "SGW"):
-                dns_addresses = pco_dns(create_session_response[(78,0)])
-                print ('    => DNS Addresses IPv4: ' + str(dns_addresses))
-                dns_addresses_ipv6 = pco_dns_ipv6(create_session_response[(78,0)])
-                print ('    => DNS Addresses IPv6: ' + str(dns_addresses_ipv6))
-                pcscf_addresses = pco_pcscf(create_session_response[(78,0)])
-                print ('    => P-CSCF Addresses IPv4: ' + str(pcscf_addresses))
-                pcscf_addresses_ipv6 = pco_pcscf_ipv6(create_session_response[(78,0)])
-                print ('    => P-CSCF Addresses IPv6: ' + str(pcscf_addresses_ipv6))
+                if (78,0) in create_session_response:
+                    dns_addresses = pco_dns(create_session_response[(78,0)])
+                    print ('    => DNS Addresses IPv4: ' + str(dns_addresses))
+                    dns_addresses_ipv6 = pco_dns_ipv6(create_session_response[(78,0)])
+                    print ('    => DNS Addresses IPv6: ' + str(dns_addresses_ipv6))
+                    pcscf_addresses = pco_pcscf(create_session_response[(78,0)])
+                    print ('    => P-CSCF Addresses IPv4: ' + str(pcscf_addresses))
+                    pcscf_addresses_ipv6 = pco_pcscf_ipv6(create_session_response[(78,0)])
+                    print ('    => P-CSCF Addresses IPv6: ' + str(pcscf_addresses_ipv6))
             else:
-                dns_addresses = pco_dns(create_session_response[(163,0)])
-                print ('    => DNS Addresses IPv4: ' + str(dns_addresses))
-                dns_addresses_ipv6 = pco_dns_ipv6(create_session_response[(163,0)])
-                print ('    => DNS Addresses IPv6: ' + str(dns_addresses_ipv6))
-                pcscf_addresses = pco_pcscf(create_session_response[(163,0)])
-                print ('    => P-CSCF Addresses IPv4: ' + str(pcscf_addresses))
-                pcscf_addresses_ipv6 = pco_pcscf_ipv6(create_session_response[(163,0)])
-                print ('    => P-CSCF Addresses IPv6: ' + str(pcscf_addresses_ipv6))               
-                
+                if (163,0) in create_session_response:
+                    dns_addresses = pco_dns(create_session_response[(163,0)])
+                    print ('    => DNS Addresses IPv4: ' + str(dns_addresses))
+                    dns_addresses_ipv6 = pco_dns_ipv6(create_session_response[(163,0)])
+                    print ('    => DNS Addresses IPv6: ' + str(dns_addresses_ipv6))
+                    pcscf_addresses = pco_pcscf(create_session_response[(163,0)])
+                    print ('    => P-CSCF Addresses IPv4: ' + str(pcscf_addresses))
+                    pcscf_addresses_ipv6 = pco_pcscf_ipv6(create_session_response[(163,0)])
+                    print ('    => P-CSCF Addresses IPv6: ' + str(pcscf_addresses_ipv6))
+
             if end_user_address == "" and end_user_address_ipv6 == "":
                 print (" 5. No End-User Address Received. Exiting.\n")
                 exit(1)

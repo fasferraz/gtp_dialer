@@ -1929,21 +1929,21 @@ def main():
                     exec_in_netns(options.netns, "ip addr add " + end_user_address + "/32 dev tun" + str(options.dev_id))
                 else:
                     exec_in_netns(options.netns, "ip addr add " + end_user_address + "/32 dev lo")
+                    if options.ip_source_address_gtpu is None and options.netns is not None:
+                        exec_in_netns(False,"ip link add veth1 type veth peer name nsveth1")
+                        exec_in_netns(False,"ip link set nsveth1 netns " + options.netns)
+                        exec_in_netns(options.netns, "ifconfig nsveth1 " + options.ip_source_address_gtpu + '/' + options.ip_net_veth_gtpu.split("/")[1] + " up")
+                        exec_in_netns(False, "ip link set veth1 up")
+                        exec_in_netns(False, "ip addr add " + options.ip_net_veth_gtpu + " dev veth1")
 
-                    exec_in_netns(False,"ip link add veth1 type veth peer name nsveth1")
-                    exec_in_netns(False,"ip link set nsveth1 netns " + options.netns)
-                    exec_in_netns(options.netns, "ifconfig nsveth1 " + options.ip_source_address_gtpu + '/' + options.ip_net_veth_gtpu.split("/")[1] + " up")
-                    exec_in_netns(False, "ip link set veth1 up")
-                    exec_in_netns(False, "ip addr add " + options.ip_net_veth_gtpu + " dev veth1")
-
-                    # add routes to possible different control or userplane IP addresses received in CreateSessionResponse or CreatePDPContextResponse in namespace
-                    if options.netns is not None:
-                        exec_in_netns(options.netns, "ip route add " + options.tunnel_dst_ip + "/32 via " + options.ip_net_veth_gtpu.split("/")[0] + " dev nsveth1")
-                        if len(remote_destinations) > 1:
-                            for index, address in enumerate(remote_destinations):
-                                if index !=0:
-                                    if sys.platform == "linux" or sys.platform == "linux2":
-                                        exec_in_netns(options.netns, "ip route add " + address + "/32 via " + options.ip_net_veth_gtpu.split("/")[0] + " dev nsveth1")
+                        # add routes to possible different control or userplane IP addresses received in CreateSessionResponse or CreatePDPContextResponse in namespace
+                        if options.netns is not None:
+                            exec_in_netns(options.netns, "ip route add " + options.tunnel_dst_ip + "/32 via " + options.ip_net_veth_gtpu.split("/")[0] + " dev nsveth1")
+                            if len(remote_destinations) > 1:
+                                for index, address in enumerate(remote_destinations):
+                                    if index !=0:
+                                        if sys.platform == "linux" or sys.platform == "linux2":
+                                            exec_in_netns(options.netns, "ip route add " + address + "/32 via " + options.ip_net_veth_gtpu.split("/")[0] + " dev nsveth1")
 
 
                     if options.ip_source_address_gtpu is None:

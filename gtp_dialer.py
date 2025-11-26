@@ -401,11 +401,11 @@ def add_private_extension(identifier, value, value2):
     return b'\xff\x00' + struct.pack("!B",len(value_bytes)) + value_bytes    
     
 
-### GTPv1 messages ###    
-def cpc_request(apn, gtp_address, imsi, msisdn, pdptype, username, password, ggsn, username_pco, password_pco, dhcp, cc, operator, imei, authentication_type, rat, sel_mode, gtp_u_address):
+### GTPv1 messages ###
+def cpc_request(apn, gtp_address, imsi, msisdn, pdptype, username, password, ggsn, username_pco, password_pco, dhcp, cc, operator, imei, authentication_type, rat, sel_mode, gtp_u_address, lac=100, rac=1):
 
     global sequence_number
-    
+
     gtp_flags = b'\x32'
     gtp_message_type = b'\x10'
     gtp_length = b'\x00\x00' #length = 0. filled in the end
@@ -417,12 +417,12 @@ def cpc_request(apn, gtp_address, imsi, msisdn, pdptype, username, password, ggs
 
     gtp_imsi = add_imsi(imsi)
     gtp_routing_area_identity = add_routing_area_identity(operator)
-    gtp_selection_mode = add_selection_mode(sel_mode)    
+    gtp_selection_mode = add_selection_mode(sel_mode)
     gtp_teid_local_data = add_random_teid("data")
     gtp_teid_local_control = add_random_teid("control")
     gtp_nsapi = add_nsapi(DEFAULT_NSAPI)
     gtp_cc = b'\x1a' + hex2bytes(cc)
-    
+
     if pdptype == "ipv4":
         gtp_end_user_address = add_eua_ipv4()
     elif pdptype == "ipv6":
@@ -430,19 +430,20 @@ def cpc_request(apn, gtp_address, imsi, msisdn, pdptype, username, password, ggs
     elif pdptype == "ipv4v6":
         gtp_end_user_address = add_eua_ipv4v6()
     gtp_apn = add_apn(apn)
-    gtp_pco = add_pco(pdptype, username_pco, password_pco, dhcp, authentication_type)    
+    gtp_pco = add_pco(pdptype, username_pco, password_pco, dhcp, authentication_type)
     gtp_gsn_address = add_gsn_address(gtp_address)
     gtp_gsn_u_address = add_gsn_address(gtp_u_address)
     gtp_msisdn = add_msisdn(msisdn)
-    gtp_qos = add_qos()   
+    gtp_qos = add_qos()
     gtp_common_flags = add_common_flags()
     if rat is None:
         gtp_rat = add_rat(1)
     else:
-        gtp_rat = add_rat(int(rat))    
+        gtp_rat = add_rat(int(rat))
     gtp_imei = add_imei(imei)
-    
-    gtp_ie = gtp_imsi + gtp_routing_area_identity + gtp_selection_mode + gtp_teid_local_data + gtp_teid_local_control + gtp_nsapi + gtp_cc + gtp_end_user_address + gtp_apn + gtp_pco + gtp_gsn_address + gtp_gsn_u_address + gtp_msisdn + gtp_qos + gtp_common_flags + gtp_rat + gtp_imei
+    gtp_user_location_information = add_user_location_information(operator, lac, rac)
+
+    gtp_ie = gtp_imsi + gtp_routing_area_identity + gtp_selection_mode + gtp_teid_local_data + gtp_teid_local_control + gtp_nsapi + gtp_cc + gtp_end_user_address + gtp_apn + gtp_pco + gtp_gsn_address + gtp_gsn_u_address + gtp_msisdn + gtp_qos + gtp_common_flags + gtp_rat + gtp_user_location_information + gtp_imei
 
     if username is not None and password is not None:
         gtp_pe1 = add_private_extension(0, username,None)
@@ -454,13 +455,13 @@ def cpc_request(apn, gtp_address, imsi, msisdn, pdptype, username, password, ggs
 
     cpc_packet = bytearray(gtp_header + gtp_ie)
 
-    length = len(cpc_packet) - 8    
+    length = len(cpc_packet) - 8
     cpc_packet[3] = length % 256
     cpc_packet[2] = length // 256
-    
+
     sequence_number +=1
 
-    return cpc_packet 
+    return cpc_packet
 
 
 def dpc_request(teid):
@@ -673,6 +674,19 @@ def add_routing_area_identity(mccmnc):
     else:
         mnc3 = mccmnc[5]
     return b'\x03' + bcd(mccmnc[0] + mccmnc[1] + mccmnc[2] + mnc3 + mccmnc[3] + mccmnc[4]) + b'\xff\xfe\xff'
+
+def add_user_location_information(mccmnc, lac=100, rac=1):
+    # User Location Information IE for GTPv1 (Type 152 / 0x98)
+    # Geographic Location Type = 2  (RAI), followed by MCC+MNC+LAC+RAC
+    if len(mccmnc)==5:
+        mnc3 = 'f'
+    else:
+        mnc3 = mccmnc[5]
+    mcc_mnc = bcd(mccmnc[0] + mccmnc[1] + mccmnc[2] + mnc3 + mccmnc[3] + mccmnc[4])
+    lac_bytes = struct.pack("!H", int(lac))
+    rac_bytes = struct.pack("!B", int(rac)) + b'\xff'  # Using RAC as Cell Identity for simplicity
+    uli_data = b'\x02' + mcc_mnc + lac_bytes + rac_bytes  # Geographic Location Type 0 (CGI)
+    return b'\x98\x00' + struct.pack("!B", len(uli_data)) + uli_data
 
 def add_user_location_info_v2(instance, mccmnc, rat): # rat = 1 (sgsn) or 6 (mme ou sgw)
     if len(mccmnc)==5:
@@ -1348,11 +1362,13 @@ def main():
     parser.add_option("-N", "--netns", dest="netns", help="Name of network namespace for tun device")
     parser.add_option("-Z", "--gtp-kernel", action="store_true", dest="gtp_kernel", help="Use GTP Kernel. Needs libgtpnl", default=False)
     parser.add_option("-X", "--no-default", action="store_true", dest="no_default", help="Does not install default route", default=False)
-    parser.add_option("-q", "--qci", dest="qci", default="8", help="QCI") 
-    parser.add_option("--selmode", dest="sel_mode", default="0", help="Selection Mode (0, 1 oe 2)") 
-    parser.add_option("--gtp_u_source_address", dest="gtp_u_address", help="GTP source address for GTP-U") 
+    parser.add_option("-q", "--qci", dest="qci", default="8", help="QCI")
+    parser.add_option("--selmode", dest="sel_mode", default="0", help="Selection Mode (0, 1 oe 2)")
+    parser.add_option("--gtp_u_source_address", dest="gtp_u_address", help="GTP source address for GTP-U")
     parser.add_option("--ip_source_address_gtpu", dest="ip_source_address_gtpu", help="IP source address for GTP-U. If not specified it will the same value as --ip_source_address")
     parser.add_option("--ip_net_veth_gtpu", dest="ip_net_veth_gtpu", help="IP/Mask of veth for GTP-U. --ip_source_address_gtpu must be set and belong to the same network. Routing for this network must exist (downlink must reach host machine)")
+    parser.add_option("--lac", dest="lac", default="100", help="Location Area Code for GTPv1 (default: 100)")
+    parser.add_option("--rac", dest="rac", default="1", help="Routing Area Code for GTPv1 (default: 1)")
 
 
     (options, args) = parser.parse_args()
@@ -1467,8 +1483,8 @@ def main():
         if options.tunnel_type == "GTP":
 
             print (" 3. Sending Create PDP Context to GGSN")
-            # Create session 
-            s_gtpc.sendto(cpc_request(options.apn_name, options.gtp_address, options.imsi, options.msisdn, options.pdptype, options.username, options.password, options.ggsn, options.username_pco, options.password_pco, options.dhcp, options.cc, options.operator, options.imei, options.authentication_type, options.rat, options.sel_mode, options.gtp_u_address), (options.tunnel_dst_ip, GTP_C_REMOTE_PORT))	
+            # Create session
+            s_gtpc.sendto(cpc_request(options.apn_name, options.gtp_address, options.imsi, options.msisdn, options.pdptype, options.username, options.password, options.ggsn, options.username_pco, options.password_pco, options.dhcp, options.cc, options.operator, options.imei, options.authentication_type, options.rat, options.sel_mode, options.gtp_u_address, options.lac, options.rac), (options.tunnel_dst_ip, GTP_C_REMOTE_PORT))
 
             # alarm triggering for timeout, in case there is no answer from GGSN
             signal.signal(signal.SIGALRM, signal_handler)
